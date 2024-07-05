@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Thought Mapper with IndexedDB</title>
+    <style>
+        /* ... (previous CSS remains the same) ... */
+    </style>
+</head>
+<body>
+    <div id="persona">
+        <div id="persona-name">Persona: <span id="persona-name-display" contenteditable="true">Anonymous</span></div>
+        <button id="generate-thought" onclick="generateThought()">Generate Thought</button>
+    </div>
+    
+    <div id="thoughts-container" class="masonry-grid"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/masonry/4.2.2/masonry.pkgd.min.js"></script>
+    <script>
+        let db;
+        let persona = { name: "Anonymous", thoughts: [] };
+        const colors = ['#ffcccb', '#90EE90', '#ADD8E6'];
+        const thoughtTemplates = [
+            "I wonder about...", "Today I learned that...", "An interesting idea:",
+            "A question I have:", "Something I want to explore:", "A goal for the future:",
+            "A memory that stands out:", "A concept I'm trying to understand:",
+            "An observation about the world:", "A personal reflection:"
+        ];
+
+        // Open IndexedDB connection
+        const dbName = "ThoughtMapperDB";
+        const request = indexedDB.open(dbName, 1);
+
+        request.onerror = function(event) {
+            console.error("IndexedDB error:", event.target.error);
+        };
+
+        request.onsuccess = function(event) {
+            db = event.target.result;
+            loadPersonaFromDB();
+        };
+
+        request.onupgradeneeded = function(event) {
+            db = event.target.result;
+            const objectStore = db.createObjectStore("persona", { keyPath: "id" });
+            objectStore.createIndex("name", "name", { unique: false });
+            objectStore.createIndex("thoughts", "thoughts", { unique: false });
+        };
+
+        function loadPersonaFromDB() {
+            const transaction = db.transaction(["persona"], "readonly");
+            const objectStore = transaction.objectStore("persona");
+            const request = objectStore.get(1);
+
+            request.onerror = function(event) {
+                console.error("Error loading persona:", event.target.error);
+            };
+
+            request.onsuccess = function(event) {
+                if (request.result) {
+                    persona = request.result;
+                    document.getElementById('persona-name-display').textContent = persona.name;
+                } else {
+                    savePersonaToDB();
+                }
+                renderThoughts();
+            };
+        }
+
+        function savePersonaToDB() {
+            const transaction = db.transaction(["persona"], "readwrite");
+            const objectStore = transaction.objectStore("persona");
+            const request = objectStore.put({ id: 1, ...persona });
+
+            request.onerror = function(event) {
+                console.error("Error saving persona:", event.target.error);
+            };
+
+            request.onsuccess = function(event) {
+                console.log("Persona saved successfully");
+            };
+        }
+
+        function updatePersonaName() {
+            persona.name = document.getElementById('persona-name-display').textContent;
+            savePersonaToDB();
+        }
+
+        function generateThought() {
+            const thought = {
+                id: Date.now(),
+                text: thoughtTemplates[Math.floor(Math.random() * thoughtTemplates.length)],
+                colorIndex: Math.floor(Math.random() * colors.length),
+                image: null
+            };
+            persona.thoughts.push(thought);
+            savePersonaToDB();
+            renderThoughts();
+        }
+
+        function changeColor(thoughtId) {
+            const thought = persona.thoughts.find(t => t.id === thoughtId);
+            thought.colorIndex = (thought.colorIndex + 1) % colors.length;
+            savePersonaToDB();
+            renderThoughts();
+        }
+
+        function updateThought(thoughtId, newText) {
+            const thought = persona.thoughts.find(t => t.id === thoughtId);
+            thought.text = newText.trim();
+            savePersonaToDB();
+        }
+
+        function searchImage(thoughtId) {
+            const thought = persona.thoughts.find(t => t.id === thoughtId);
+            const searchTerm = prompt("Enter image search term:");
+            if (searchTerm) {
+                thought.image = `https://source.unsplash.com/random/800x600/?${encodeURIComponent(searchTerm)}`;
+                savePersonaToDB();
+                renderThoughts();
+            }
+        }
+
+        function renderThoughts() {
+            const container = document.getElementById('thoughts-container');
+            container.innerHTML = '';
+            
+            persona.thoughts.forEach(thought => {
+                const thoughtElement = document.createElement('div');
+                thoughtElement.className = 'thought';
+                thoughtElement.innerHTML = `
+                    ${thought.image ? `<img src="${thought.image}" class="thought-image" alt="Thought image">` : ''}
+                    <div class="thought-content">
+                        <div class="color-change" style="background-color:${colors[thought.colorIndex]}" onclick="changeColor(${thought.id})"></div>
+                        <textarea class="thought-text" oninput="updateThought(${thought.id}, this.value)">${thought.text}</textarea>
+                        <input type="text" class="image-search" placeholder="Search for image" onkeyup="if(event.key==='Enter')searchImage(${thought.id})">
+                    </div>
+                `;
+                container.appendChild(thoughtElement);
+            });
+
+            new Masonry(container, {
+                itemSelector: '.thought',
+                columnWidth: '.thought',
+                percentPosition: true
+            });
+        }
+
+        document.getElementById('persona-name-display').onblur = updatePersonaName;
+    </script>
+</body>
+</html>
